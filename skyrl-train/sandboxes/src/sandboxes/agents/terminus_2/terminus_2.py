@@ -399,7 +399,9 @@ so ask everything you need to know."""
 
         try:
             start_time = time.time()
-            print("!!!!!! chat.chat")
+            print("!!!!!! chat.chat begins")
+            print("!!! logging path", logging_paths)
+            print("!!! prompt", prompt)
             response = await chat.chat(
                 prompt,
                 logging_path=logging_path,

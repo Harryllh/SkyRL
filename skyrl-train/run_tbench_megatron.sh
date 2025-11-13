@@ -1,9 +1,11 @@
 set -x
 
 
-sudo chmod -R 777 "$HOME/SkyRL"
+# sudo chmod -R 777 "$HOME/SkyRL"
 pip uninstall websockets
+pip install websockets
 pip uninstall aiofiles
+pip install aiofiles
 
 # WORK IN PROGRESS
 # Colocated GRPO training+generation for Qwen3-8B on TerminalBench tasks with Megatron on 4 GPUs.
@@ -22,7 +24,7 @@ export PYTHONPATH="/home/ray/anaconda3/lib/python3.12/site-packages"
 export SKYRL_PYTHONPATH_EXPORT=1
 
 DATA_DIR="/data/ez_apex_281"
-NUM_NODES=3
+NUM_NODES=2
 NUM_GPUS=8
 LOGGER="wandb"  # change to "console" to print to stdout
 TBENCH_CONFIG_DIR="examples/terminal_bench"
@@ -34,14 +36,14 @@ INFERENCE_BACKEND="vllm"  # currently only vLLM is supported for Megatron in thi
 
 # Megatron parallelism (4 GPUs total => 2x TP, 2x PP, 1x CP)
 MEGATRON_TP=2
-MEGATRON_PP=3
+MEGATRON_PP=2
 MEGATRON_CP=4
 
 MEGATRON_EP=8
 MEGATRON_ETP=1
 
 FLASH_ATTN=true
-NUM_INFERENCE_ENGINES=24
+NUM_INFERENCE_ENGINES=16
 INFERENCE_ENGINE_TP=1
 
 
@@ -67,6 +69,7 @@ export VLLM_RPC_TIMEOUT=300            # 5 minute timeout for vLLM RPC calls
 export NCCL_SOCKET_IFNAME=enp210s0f0np0
 export GLOO_SOCKET_IFNAME=enp210s0f0np0
 
+# prlimit --pid=$$ --nofile=65000
 # ulimit -n 2097152          # Max open files
 # ulimit -u 16384          # Max user processes
 # ulimit -s unlimited      # Stack size
@@ -128,14 +131,14 @@ uv run --isolated --extra $INFERENCE_BACKEND --extra mcore --with "sandboxes@./s
   trainer.eval_before_train=false \
   trainer.eval_interval=-1 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=48 \
-  trainer.policy_mini_batch_size=6 \
+  trainer.train_batch_size=32 \
+  trainer.policy_mini_batch_size=4 \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=32000 \
   generator.sampling_params.max_generate_length=32000 \
   trainer.policy.optimizer_config.lr=1.0e-6 \
-  trainer.algorithm.use_kl_loss=false \
+  trainer.algorithm.use_kl_loss=true \
   generator.backend=$INFERENCE_BACKEND \
   generator.run_engines_locally=true \
   generator.weight_sync_backend=nccl \
@@ -146,9 +149,9 @@ uv run --isolated --extra $INFERENCE_BACKEND --extra mcore --with "sandboxes@./s
   generator.gpu_memory_utilization=0.6 \
   trainer.logger="$LOGGER" \
   trainer.project_name="terminal_bench" \
-  trainer.run_name="ez_apex_281_megatron_docker" \
-  trainer.resume_mode=latest \
-  trainer.hf_save_interval=2 \
+  trainer.run_name="ez_apex_281_megatron_double" \
+  trainer.resume_mode=null \
+  trainer.hf_save_interval=1 \
   trainer.ckpt_interval=1 \
   trainer.ckpt_path="/data/ckpt" \
   trainer.export_path="/data/hf_ckpt" \
