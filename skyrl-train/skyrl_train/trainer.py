@@ -90,6 +90,20 @@ class RayPPOTrainer:
         self.all_metrics = {}
         self.all_timings = {}
         self.global_step = 0
+        import wandb
+        self.grpo_group_table = wandb.Table(
+            columns=[
+                "step",
+                "group_id",
+                "n_total",
+                "n_pos",
+                "n_zero",
+                "n_neg",
+                "reward_mean",
+                "reward_min",
+                "reward_max",
+            ]
+        )
 
         # initialized in `build_models`
         self.policy_model: PPORayActorGroup = None
@@ -657,6 +671,8 @@ class RayPPOTrainer:
             gamma=self.cfg.trainer.algorithm.gamma,
             lambd=self.cfg.trainer.algorithm.lambd,
             grpo_norm_by_std=self.cfg.trainer.algorithm.grpo_norm_by_std,
+            group_stats=self.grpo_group_table,
+            global_step=self.global_step
         )
         data["returns"] = returns
         data["advantages"] = advantages

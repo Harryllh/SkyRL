@@ -986,10 +986,34 @@ def compute_grpo_outcome_advantage(
     id2mean = {}
     id2std = {}
 
+    grpo_group_table = kwargs.get("grpo_group_table", None)
+    global_step = kwargs.get("global_step", None)
+
     with torch.no_grad():
         bsz = scores.shape[0]
         for i in range(bsz):
             id2score[index[i]].append(scores[i])
+
+        for uid, score_list in id2score.items():
+                t = torch.stack(score_list)  # [n_group]
+                n_total = int(t.numel())
+                n_pos = int((t > 0).sum().item())
+                n_zero = int((t == 0).sum().item())
+                n_neg = int((t < 0).sum().item())
+
+                grpo_group_table.add_data(
+                    int(global_step),
+                    str(uid),
+                    n_total,
+                    n_pos,
+                    n_zero,
+                    n_neg,
+                    float(t.mean().item()),
+                    float(t.min().item()),
+                    float(t.max().item()),
+                )
+
+        
         for idx in id2score:
             if len(id2score[idx]) == 1:
                 id2mean[idx] = torch.tensor(0.0)
