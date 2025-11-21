@@ -316,6 +316,8 @@ class RayPPOTrainer:
                     **self.all_metrics,
                     **{f"timing/{k}": v for k, v in self.all_timings.items()},
                 }
+                log_payload["grpo/group_table"] = self.grpo_group_table
+                
                 self.tracker.log(log_payload, step=self.global_step, commit=True)
                 self.all_metrics = {}
                 self.all_timings = {}

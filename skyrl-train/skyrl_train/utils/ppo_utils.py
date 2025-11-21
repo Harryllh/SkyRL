@@ -986,7 +986,8 @@ def compute_grpo_outcome_advantage(
     id2mean = {}
     id2std = {}
 
-    grpo_group_table = kwargs.get("grpo_group_table", None)
+    print("kwargs!!!!", kwargs)
+    grpo_group_table = kwargs.get("group_stats", None)
     global_step = kwargs.get("global_step", None)
 
     with torch.no_grad():
