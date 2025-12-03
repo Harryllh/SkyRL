@@ -399,14 +399,10 @@ so ask everything you need to know."""
 
         try:
             start_time = time.time()
-            print("!!!!!! chat.chat begins")
-            print("!!! logging path", logging_paths)
-            print("!!! prompt", prompt)
             response = await chat.chat(
                 prompt,
                 logging_path=logging_path,
             )
-            print("!!!!!! chat.chat done")
             end_time = time.time()
             request_time_ms = (end_time - start_time) * 1000
             self._api_request_times.append(request_time_ms)
@@ -701,17 +697,6 @@ so ask everything you need to know."""
             )
             exec_end_time = time.time()
             self._logger.info(f"Episode {episode}: Execution finished in {exec_end_time - exec_start_time:.3f} seconds")
-            # Save the time taken and commands to a file in the root directory
-            output_path = "~/terminus.log"
-            # Convert commands list to readable string
-            cmds_str = "; ".join([str(cmd.keystrokes) for cmd in commands])
-            line = (
-                f"Episode {episode}, Time: {exec_end_time - exec_start_time:.3f} seconds, "
-                f"Commands: {cmds_str}\n"
-            )
-            with open(output_path, "a") as f:
-                f.write(line)
-
 
             if is_task_complete:
                 if self._pending_completion:
