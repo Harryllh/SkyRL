@@ -226,15 +226,15 @@ class Trial:
                 timeout=self._agent_timeout_sec,
             )
         except asyncio.TimeoutError as e:
-            # raise AgentTimeoutError(
-            #     f"Agent execution timed out after {int(self._agent_timeout_sec)} seconds"
-            # ) from e
+            raise AgentTimeoutError(
+                f"Agent execution timed out after {int(self._agent_timeout_sec)} seconds"
+            ) from e
 
-            self._result.agent_result.metadata = {
-                "n_episodes": -1,
-                "api_request_times_msec": self._agent.api_request_times,
-                "all_messages": self._agent.chat._messages,
-            }
+            # self._result.agent_result.metadata = {
+            #     "n_episodes": -1,
+            #     "api_request_times_msec": self._agent.api_request_times,
+            #     "all_messages": self._agent.chat._messages,
+            # }
         finally:
             self._result.agent_execution.finished_at = datetime.now()
 

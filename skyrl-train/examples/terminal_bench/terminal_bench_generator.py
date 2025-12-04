@@ -1,9 +1,10 @@
 import asyncio
 from dataclasses import dataclass
 from typing import List, Optional
+from loguru import logger
 from uuid import uuid4
-from skyrl_train.generators.base import GeneratorInterface, GeneratorInput, GeneratorOutput
-from skyrl_train.generators.utils import get_rollout_metrics, encode_messages_subset, apply_overlong_filtering
+from skyrl_train.generators.base import GeneratorInterface, GeneratorInput, GeneratorOutput, TrajectoryID
+from skyrl_train.generators.utils import get_rollout_metrics, get_response_ids_and_loss_mask_from_messages
 from skyrl_train.inference_engines.inference_engine_client import InferenceEngineClient
 from skyrl_train.inference_engines.base import ConversationType
 from omegaconf import DictConfig
@@ -13,6 +14,9 @@ from sandboxes.models.environment_type import EnvironmentType
 from sandboxes.models.agent.name import AgentName
 from sandboxes.trial.trial import Trial
 
+# We have N retries for each trial, if one of the rollout (out of n_samples_per_prompt) fails
+# after N attemptes, we skip this prompt altogether.
+MAX_NUM_RETRIES_PER_TRIAL = 2
 
 @dataclass
 class TerminalBenchAgentOutput:
@@ -21,8 +25,8 @@ class TerminalBenchAgentOutput:
     stop_reason: str
     loss_mask: List[int]
     prompt_ids: List[int]
-    rollout_logprobs: Optional[List[float]]
-
+    trajectory_id: TrajectoryID
+    # summarization_count: Optional[int] = None
 
 class TerminalBenchGenerator(GeneratorInterface):
     def __init__(
@@ -44,65 +48,78 @@ class TerminalBenchGenerator(GeneratorInterface):
         self.tokenizer = tokenizer
         self.model_name = generator_cfg.model_name
 
-        # TerminalBench config
+        # TerminalBench config. Parse here to ensure everything is passed in.
         self.trials_dir = terminal_bench_cfg.trials_dir
         self.agent_name = terminal_bench_cfg.agent_name
         self.max_episodes = terminal_bench_cfg.max_episodes
+        self.enable_summarize = terminal_bench_cfg.get("enable_summarize", True)
 
-        self.overlong_filtering_threshold = 800
+        # Optional overrides for the environment
+        self.override_memory_mb = terminal_bench_cfg.get("override_memory_mb")
+        self.override_storage_mb = terminal_bench_cfg.get("override_storage_mb")
+        self.override_cpus = terminal_bench_cfg.get("override_cpus")
 
-        if self.generator_cfg.chat_template.name_or_path is not None:
-            raise NotImplementedError("TerminalBenchGenerator doesn't support custom chat template")
+        logger.info(f"TerminalBenchGenerator initialized with overrides: memory={self.override_memory_mb}, storage={self.override_storage_mb}, cpus={self.override_cpus}")
 
-    def apply_overlong_filtering(
-        self,
-        loss_masks: List[List[int]],
-        response_ids: List[List[int]],
-        eos_token_id: int,
-    ) -> List[List[int]]:
-        """
-        Implements DAPO Overlong Filtering: zero-out every token's mask whenever
-        the response does not end with the eos token id (i.e. truncated).
-
-        Returns:
-            - The loss masks with tokens zeroed out for truncated responses
-        """
-        t = getattr(self, "overlong_filtering_threshold", None)
-        assert t is not None, "self.overlong_filtering_threshold must be set"
-        assert len(loss_masks) == len(response_ids), "loss_masks and response_ids must have the same length"
-
-        return [
-            mask[:t] + [0] * (len(mask) - t) if len(r) > t else mask
-            for mask, r in zip(loss_masks, response_ids)
-        ]
+        # Read custom chat template
+        custom_chat_template_path = generator_cfg.engine_init_kwargs.get("custom_chat_template_chat_completion_path", None)
+        if custom_chat_template_path:
+            with open(custom_chat_template_path, "r") as f:
+                self.custom_chat_template_content = f.read()
+            logger.info(f"TerminalBenchGenerator initialized with custom chat template read from: {custom_chat_template_path}")
+        else:
+            self.custom_chat_template_content = None
 
     async def generate(self, input_batch: GeneratorInput) -> GeneratorOutput:
-        
         tasks = []
-        for prompt in input_batch["prompts"]:
+        for i in range(len(input_batch["prompts"])):
             tasks.append(
                 self.terminal_bench_agent_loop(
-                    prompt=prompt,
+                    prompt=input_batch["prompts"][i],
+                    trajectory_id=input_batch["trajectory_ids"][i],
                 )
             )
 
-        all_outputs = await asyncio.gather(*tasks)
+        all_outputs: List[TerminalBenchAgentOutput] = await asyncio.gather(*tasks)
 
-        responses = [output.response_ids for output in all_outputs]
-        rewards = [output.reward for output in all_outputs]
-        rollout_metrics = get_rollout_metrics(responses, rewards)
+        # For a group of trajectories (n_samples_per_prompt trajectories for the same prompt), if one
+        # of the trajectories fails, we skip the entire group. We also skip the group for rollout metric aggregation
+        failed_instance_ids = set()
+        num_failed_trajectories = 0  # per-trajectory, rather than per-instance
+        successful_outputs: List[TerminalBenchAgentOutput] = []  # only for metrics purpose
+        for output in all_outputs:
+            if output.stop_reason == "error":
+                failed_instance_ids.add(output.trajectory_id.instance_id)
+                num_failed_trajectories += 1
 
-        loss_masks = [output.loss_mask for output in all_outputs]
-        if self.generator_cfg.apply_overlong_filtering:
-            loss_masks = self.apply_overlong_filtering(loss_masks, responses, self.tokenizer.eos_token_id)
+        for output in all_outputs:
+            if output.trajectory_id.instance_id in failed_instance_ids:
+                output.response_ids = [0]
+                output.stop_reason = "error"
+                output.loss_mask = [0]
+                output.prompt_ids = [0]
+                output.reward = 0
+            else:
+                successful_outputs.append(output)
 
-
+        # Calculate rollout metrics for successful outputs
+        if len(successful_outputs) > 0:
+            rollout_metrics = get_rollout_metrics(
+                [output.response_ids for output in successful_outputs], 
+                [output.reward for output in successful_outputs],
+            )
+            # rollout_metrics["generate/trajectories_summarized"] = sum(1 for output in successful_outputs if output.summarization_count > 0)
+            rollout_metrics["generate/trajectories_truncated"] = sum(1 for output in successful_outputs if output.stop_reason == "length")
+        else:
+            rollout_metrics = {}
+        rollout_metrics["generate/num_failed_instances"] = len(failed_instance_ids)
+        rollout_metrics["generate/num_failed_trajectories"] = num_failed_trajectories
 
         generator_output: GeneratorOutput = {
             "prompt_token_ids": [output.prompt_ids for output in all_outputs],
-            "response_ids": responses,
-            "rewards": rewards,
-            "loss_masks": loss_masks,
+            "response_ids": [output.response_ids for output in all_outputs],
+            "rewards": [output.reward for output in all_outputs],
+            "loss_masks": [output.loss_mask for output in all_outputs],
             "stop_reasons": [output.stop_reason for output in all_outputs],
             "rollout_metrics": rollout_metrics,
             "rollout_logprobs": None,
@@ -113,31 +130,36 @@ class TerminalBenchGenerator(GeneratorInterface):
     async def terminal_bench_agent_loop(
         self,
         prompt: ConversationType,
+        trajectory_id: TrajectoryID,
     ) -> TerminalBenchAgentOutput:
         """
         Run a single terminal_bench agent.
         """
-        # Sleeping to create an overlap between task execution and inferencing
-        import random
-        await asyncio.sleep(random.uniform(1, 10))
-
         # Generate session_id for sticky routing to inference engines
         # All LLM requests in this trial will share the same session_id
         session_id = uuid4().hex
+
+        environment_config = EnvironmentConfig(
+            type=EnvironmentType.DAYTONA,
+            # override_cpus=self.override_cpus,
+            # override_memory_mb=self.override_memory_mb,
+            # override_storage_mb=self.override_storage_mb,
+        )
 
         if self.agent_name == "terminus":
             trial_config = TrialConfig(
                 task=TaskConfig(path=prompt),
                 trials_dir=Path(self.trials_dir),
-                environment=EnvironmentConfig(type=EnvironmentType.DAYTONA),
+                environment=environment_config,
                 agent=AgentConfig(
                     name=AgentName.TERMINUS_2.value,
                     model_name=f"hosted_vllm/{self.model_name}",
                     kwargs={
                         "api_base": f"{self.base_url}/v1",
                         "key": "fake_key",
-                        "session_id": session_id,
                         "max_episodes": self.max_episodes,
+                        "session_id": session_id,
+                        "enable_summarize": self.enable_summarize,
                     },
                 ),
             )
@@ -145,7 +167,7 @@ class TerminalBenchGenerator(GeneratorInterface):
             trial_config = TrialConfig(
                 task=TaskConfig(path=prompt),
                 trials_dir=Path(self.trials_dir),
-                environment=EnvironmentConfig(type=EnvironmentType.DAYTONA),
+                environment=environment_config,
                 agent=AgentConfig(
                     name=AgentName.ORACLE,
                     model_name=f"hosted_vllm/{self.model_name}",
@@ -155,87 +177,63 @@ class TerminalBenchGenerator(GeneratorInterface):
             raise ValueError(f"Invalid agent name: {self.agent_name}")
 
         trial = Trial(trial_config)
-        # Run the trial
-        # for retry in range(3):
-        num_retries = 0
-        while True: 
-            print(f"Running blabla {num_retries} times")
+
+        # Run the trial to get `rewards`, `chat_history`, and `summarization_count`
+        successful = False
+        reward = None
+        chat_history = None
+        summarization_count = None
+        for i in range(MAX_NUM_RETRIES_PER_TRIAL):
+            prefix = f"Trajectory {trajectory_id} attempt {i+1}/{MAX_NUM_RETRIES_PER_TRIAL}"
+            results = None
             try:
                 results = await trial.run()
-                print(f"Results: {results}")
                 if not results.verifier_result:
-                    print(f"[WARNING] Exception info: {results.exception_info}")
-                    continue
-                reward = results.verifier_result.reward
-                agent_result = getattr(results, "agent_result", None)
-                metadata = getattr(agent_result, "metadata", None)
-                if agent_result and "all_messages" not in results.agent_result.metadata:
-                    print(f"[WARNING] No 'all_messages' in agent_result.metadata for agent. Exception info: {results.agent_result}")
+                    logger.warning(f"{prefix} failed: Exception info: {results.exception_info}. Results: {results}")
                     continue
 
-                # chat_history = results.agent_result.metadata["all_messages"]
-                chat_history = metadata.get("all_messages") or []
-                if agent_result and len(chat_history) > 0:
+                reward = results.verifier_result.reward
+                chat_history = results.agent_result.metadata['all_messages']
+                # summarization_count = results.agent_result.metadata['summarization_count']
+                if len(chat_history) > 1 and chat_history[0]["role"] == "user":
+                    successful = True
+                    logger.info(f"{prefix} successful: Results: {results.agent_result.metadata}")
                     break
                 else:
-                    print(f"[WARNING] Agent {self.agent_name} did not return a response")
+                    logger.warning(f"{prefix} failed: Agent {self.agent_name} did not return a chat history with a user message. chat_history: {chat_history}\n\nResults: {results}")
             except Exception as e:
-                print(f"Error running trial: {e}")
-                num_retries += 1
+                logger.warning(f"{prefix} failed: Error running trial: {e}. Results: {results}")
                 continue
 
+        if not successful:
+            # We make loss mask 0 so it does not contribute to model updates
+            logger.warning(f"Trajectory {trajectory_id} failed after {MAX_NUM_RETRIES_PER_TRIAL} attempts, will set loss mask to [0].")
+            return TerminalBenchAgentOutput(
+                response_ids=[0],
+                reward=0,
+                stop_reason="error",
+                loss_mask=[0],
+                prompt_ids=[0],
+                trajectory_id=trajectory_id,
+            )
 
-        # if retry == 2:
-        #     return None
-
-        # Use the first message as the prompt
+        # Use the first message as the prompt. We assume to be no systems messages.
+        assert chat_history[0]["role"] == "user", "The first message should be a user message"
         prompt = [chat_history[0]]
         prompt_ids = self.tokenizer.apply_chat_template(
             prompt,
-            add_generation_prompt=True,  # Always add generation prompt for multi-turn
+            add_generation_prompt=False,  # the message below will add it themselves
             tokenize=True,
+            chat_template=self.custom_chat_template_content,
         )
         initial_prompt_length = len(prompt_ids)
 
         # Process response messages (everything after the first message)
         response_messages = chat_history[1:]
-
-        response_ids = []
-        loss_mask = []
-        rollout_logprobs = []
-
-        # Get logprobs for assistant messages from trial results
-        # Format: [[logprobs for assistant msg 1], [logprobs for assistant msg 2], ...]
         assistant_logprobs = getattr(results.agent_result, "output_logprobs", None)
-        assistant_msg_idx = 0
-
-        for message in response_messages:
-            # Apply chat template and tokenize each message
-            msg_encoding = encode_messages_subset([message], self.tokenizer)
-
-            # Extend response_ids with the tokens
-            response_ids.extend(msg_encoding)
-
-            # Extend loss_mask: 0s for user, 1s for assistant
-            if message["role"] == "user":
-                loss_mask.extend([0] * len(msg_encoding))
-                if assistant_logprobs:
-                    rollout_logprobs.extend([0.0] * len(msg_encoding))
-            else:  # assistant
-                loss_mask.extend([1] * len(msg_encoding))
-                if assistant_logprobs:
-                    if assistant_msg_idx >= len(assistant_logprobs):
-                        raise ValueError(
-                            f"Missing logprobs for assistant message #{assistant_msg_idx + 1}. Provided {len(assistant_logprobs)} logprob lists."
-                        )
-                    msg_logprobs = assistant_logprobs[assistant_msg_idx]
-                    if len(msg_logprobs) != len(msg_encoding):
-                        raise ValueError(
-                            f"Logprobs count ({len(msg_logprobs)}) does not match token count ({len(msg_encoding)}) "
-                            f"for assistant message #{assistant_msg_idx + 1}."
-                        )
-                    rollout_logprobs.extend(msg_logprobs)
-                    assistant_msg_idx += 1
+        response_ids, loss_mask, rollout_logprobs = get_response_ids_and_loss_mask_from_messages(
+            response_messages, self.tokenizer, assistant_logprobs, custom_chat_template=self.custom_chat_template_content
+        )
 
         # Determine stop reason
         max_response_tokens = (
@@ -243,7 +241,6 @@ class TerminalBenchGenerator(GeneratorInterface):
             + self.generator_cfg.max_input_length
             - initial_prompt_length
         )
-
         stop_reason = "complete"  # Default for trial completion
         if len(response_ids) > max_response_tokens:
             stop_reason = "length"
@@ -251,72 +248,12 @@ class TerminalBenchGenerator(GeneratorInterface):
         # Truncate to maximum allowed length
         response_ids = response_ids[:max_response_tokens]
         loss_mask = loss_mask[:max_response_tokens]
-        rollout_logprobs = rollout_logprobs[:max_response_tokens]
-
         return TerminalBenchAgentOutput(
             response_ids=response_ids,
             reward=reward,
             stop_reason=stop_reason,
             loss_mask=loss_mask,
             prompt_ids=prompt_ids,
-            # in case sandboxes doesn't return logprobs, use None
-            rollout_logprobs=rollout_logprobs if assistant_logprobs is not None else None,
+            trajectory_id=trajectory_id,
+            # summarization_count=summarization_count,
         )
-
-    
-
-    # async def generate(self, input_batch: GeneratorInput) -> GeneratorOutput:
-    #     # For testing, skip the actual async agent loop
-    #     max_response_tokens = (
-    #         self.generator_cfg.sampling_params.max_generate_length
-    #         + self.generator_cfg.max_input_length
-    #     )
-
-    #     fake_output = self.fake_generator_output(
-    #         tokenizer=self.tokenizer,
-    #         input_batch=input_batch,
-    #         max_response_tokens=max_response_tokens,
-    #     )
-
-    #     return fake_output
-    
-
-    # def fake_generator_output(self, tokenizer, input_batch, max_response_tokens: int, batch_size: int = None):
-    #     """
-    #     Create a fake generator_output dict that mimics the structure of a real one.
-
-    #     Args:
-    #         tokenizer: your tokenizer (used to get vocab size)
-    #         input_batch: the same input_batch used in generate()
-    #         max_response_tokens: maximum length of fake responses
-    #         batch_size: optional override for batch size
-    #     """
-    #     import random
-    #     vocab_size = len(tokenizer)
-    #     prompts = input_batch["prompts"]
-    #     batch_size = batch_size or len(prompts)
-
-    #     def random_tokens(length):
-    #         return [random.randint(0, vocab_size - 1) for _ in range(length)]
-
-    #     fake_outputs = []
-    #     for _ in range(batch_size):
-    #         fake_outputs.append({
-    #             "prompt_ids": random_tokens(32),  # arbitrary prompt length
-    #             "response_ids": random_tokens(max_response_tokens),
-    #             "reward": random.uniform(0, 1),
-    #             "loss_mask": [1] * max_response_tokens,
-    #             "stop_reason": "length",
-    #         })
-
-    #     generator_output = {
-    #         "prompt_token_ids": [o["prompt_ids"] for o in fake_outputs],
-    #         "response_ids": [o["response_ids"] for o in fake_outputs],
-    #         "rewards": [o["reward"] for o in fake_outputs],
-    #         "loss_masks": [o["loss_mask"] for o in fake_outputs],
-    #         "stop_reasons": [o["stop_reason"] for o in fake_outputs],
-    #         "rollout_metrics": {"avg_reward": sum(o["reward"] for o in fake_outputs) / batch_size},
-    #         "rollout_logprobs": None,
-    #     }
-
-    #     return generator_output
