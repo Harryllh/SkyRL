@@ -94,9 +94,9 @@ class DaytonaEnvironment(BaseEnvironment):
 
     async def start(self, force_build: bool):
         resources = Resources(
-            cpu=2,
-            memory=4,
-            disk=10,
+            cpu=1,
+            memory=2,
+            disk=5,
             gpu=0,
         )
         self._daytona = AsyncDaytona()
