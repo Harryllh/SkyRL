@@ -272,6 +272,8 @@ class MegatronPolicyWorkerBase(MegatronWorker, PolicyWorkerBase):
             policy_loss_fn=self.policy_loss_fn,
         )
 
+        self.empty_cuda_cache = self.cfg.trainer.policy.megatron_config.empty_cuda_cache
+
     def ppo_train(self, train_data) -> "TrainingOutputBatch":
         """
         Overrides `PolicyWorkerBase.ppo_train` for megatron.
@@ -347,6 +349,9 @@ class MegatronPolicyWorkerBase(MegatronWorker, PolicyWorkerBase):
                             micro_batch_size=micro_bsz,
                             temperature=self.cfg.generator.sampling_params.temperature,
                         )
+
+                        if self.empty_cuda_cache:
+                            torch.cuda.empty_cache()
 
                         grad_norm = self.strategy.optimizer_step(
                             self.optimizer, self.model, self.scheduler, name="actor"

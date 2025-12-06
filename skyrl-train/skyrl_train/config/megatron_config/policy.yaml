@@ -41,3 +41,5 @@ transformer_config_kwargs:
   recompute_modules: ["core_attn"]
   recompute_method: null
   recompute_num_layers: null
+
+empty_cuda_cache: true
