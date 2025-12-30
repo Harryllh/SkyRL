@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from dataclasses import dataclass, field
+import re
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 import dspy
 # ---------------------------

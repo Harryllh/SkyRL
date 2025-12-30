@@ -165,6 +165,7 @@ class DSPyGenerator(GeneratorInterface):
         chat_history = None
         summarization_count = None
         for i in range(MAX_NUM_RETRIES_PER_TRIAL):
+            prefix = f"Trajectory {trajectory_id} attempt {i+1}/{MAX_NUM_RETRIES_PER_TRIAL}"
             results = None
             try:
                 results = await trial.run()

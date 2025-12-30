@@ -117,6 +117,8 @@ class NaiveCodeGenerator(dspy.Module):
             prog_lm=self.prog_lm
             )
 
+from dspy.adapters.xml_adapter import XMLAdapter
+
 class NaiveCodeGenerator_dspy(dspy.Module):
     def __init__(self, cot=False):
         if cot:
