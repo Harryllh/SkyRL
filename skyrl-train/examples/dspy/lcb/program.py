@@ -118,9 +118,12 @@ class NaiveCodeGenerator_dspy(dspy.Module):
         else:
             self.stdin_prog = dspy.Predict(GenerateLCBcodestdin)
             self.functional_prog = dspy.Predict(GenerateLCBcodefunctional)
+            
+        self.adapter = dspy.Adapter()
 
     # def forward(self, prompt, is_stdin, **kargs):
     def forward(self, **kwargs):
+        import pdb; pdb.set_trace()
         prompt = kwargs.get("prompt")
         is_stdin = kwargs.get("is_stdin")
         # prompt = example.prompt
