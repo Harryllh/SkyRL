@@ -127,7 +127,7 @@ class DSPyDataset:
         self.data_file = data_file
         self.max_num_examples = max_num_examples
         print('loading dspy dataset...')
-        pkl_path = "/home/ray/data/lcb/live_code_bench_dataset_test.pkl"
+        pkl_path = "/home/ray/data/live_code_bench_dataset_test.pkl"
         with open(pkl_path, "rb") as f:
             examples = pickle.load(f)
         train_set, test_set = examples[:400], examples[400:]

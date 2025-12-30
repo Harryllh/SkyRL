@@ -11,7 +11,7 @@ NUM_NODES=1
 NUM_GPUS=1
 LOGGER="wandb"
 
-MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-0.5B"
 
 
 FLASH_ATTN=true

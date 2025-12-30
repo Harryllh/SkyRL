@@ -1,15 +1,27 @@
 import json
 import dspy.evaluate
-from utils import (
+from .utils import (
     check_correctness,
     unsafe_lcb_runTests,
 )
 from collections import Counter
 import dspy
-from utils import GenerateLCBcodestdin, GenerateLCBcodefunctional, post_process_code, assert_test, assert_test_multiple, assert_dummy
-from lcb_utils import post_process_tests_inputs, reduce_preds, check_test
-from assertion.assertion_chain import Assertion_module, Assertion_variable
-from utils import assert_test
+from .utils import GenerateLCBcodestdin, GenerateLCBcodefunctional, post_process_code, assert_test, assert_test_multiple, assert_dummy
+from .lcb_utils import post_process_tests_inputs, reduce_preds, check_test
+from .utils import assert_test
+
+# Optional import for assertion module (only used by some classes, not NaiveCodeGenerator_dspy)
+try:
+    from assertion.assertion_chain import Assertion_module, Assertion_variable
+except ImportError:
+    # Define dummy classes if assertion module is not available
+    class Assertion_module:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("assertion module not available. Install it or use classes that don't require it.")
+    
+    class Assertion_variable:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("assertion module not available. Install it or use classes that don't require it.")
 from collections import defaultdict
 import time
 

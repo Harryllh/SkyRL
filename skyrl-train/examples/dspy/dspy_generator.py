@@ -128,7 +128,7 @@ class DSPyGenerator(GeneratorInterface):
 
         
         # TODO: make each DSPy trial configurable.
-        trial_config = TrialConfig(dspy_program=NaiveCodeGenerator_dspy, example=prompt, reward_fn=)
+        trial_config = TrialConfig(dspy_program=NaiveCodeGenerator_dspy, example=prompt, reward_fn=reward_fn)
 
         trial = Trial(trial_config)
 
