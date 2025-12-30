@@ -22,6 +22,13 @@ except ImportError:
     class Assertion_variable:
         def __init__(self, *args, **kwargs):
             raise ImportError("assertion module not available. Install it or use classes that don't require it.")
+
+try:
+    from dspy.adapters.xml_adapter import XMLAdapter
+except ImportError:
+    # Fallback to dspy.Adapter if XMLAdapter is not available
+    XMLAdapter = dspy.Adapter
+
 from collections import defaultdict
 import time
 
@@ -118,16 +125,12 @@ class NaiveCodeGenerator_dspy(dspy.Module):
         else:
             self.stdin_prog = dspy.Predict(GenerateLCBcodestdin)
             self.functional_prog = dspy.Predict(GenerateLCBcodefunctional)
-            
-        self.adapter = dspy.Adapter()
+        
+        self.adapter = XMLAdapter()
 
-    # def forward(self, prompt, is_stdin, **kargs):
     def forward(self, **kwargs):
-        import pdb; pdb.set_trace()
         prompt = kwargs.get("prompt")
         is_stdin = kwargs.get("is_stdin")
-        # prompt = example.prompt
-        # is_stdin = example.is_stdin
 
         prog = self.stdin_prog if is_stdin else self.functional_prog
 
@@ -135,31 +138,41 @@ class NaiveCodeGenerator_dspy(dspy.Module):
         return pred
     
     def collect_trace(self, kwargs, pred):
+        # Determine which signature to use based on is_stdin
+        is_stdin = kwargs.get("is_stdin", False)
+        original_sig = GenerateLCBcodestdin if is_stdin else GenerateLCBcodefunctional
 
-        inp_messages = self.adapter.format(
-                                signature=self.original_sig,
-                                inputs=kwargs,
-                                demos=[] # TODO: Add support for demos
-                            )
-
-        completion = self.adapter.format_finetune_data(
-                                signature=self.original_sig,
+        # Get formatted finetune data which contains both input and output messages
+        finetune_data = self.adapter.format_finetune_data(
+                                signature=original_sig,
                                 inputs=kwargs,
                                 outputs=pred,
                                 demos=[] # TODO: Add support for demos
-                            )['messages']
-
+                            )
+        
+        all_messages = finetune_data.get('messages', [])
+        
+        # Extract user and assistant messages
+        # The messages list should contain the full conversation
+        user_content = ""
+        assistant_content = ""
+        
+        for msg in all_messages:
+            if msg.get("role") == "user":
+                user_content = msg.get("content", "")
+            elif msg.get("role") == "assistant":
+                assistant_content = msg.get("content", "")
 
         chat_history = [
             {
                 "role": "user",
-                "content": inp_messages
+                "content": user_content
             },
             {
                 "role": "assistant",
-                "content": all_messages[-1]["content"],
+                "content": assistant_content,
             },
-            ]
+        ]
         return chat_history
 
 

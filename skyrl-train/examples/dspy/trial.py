@@ -157,6 +157,7 @@ class Trial:
         kwargs = self._example_to_kwargs(self.example)
         results = TrialResults()
         try:
+            # import pdb; pdb.set_trace()
             # 1) Run DSPy program
             pred = self.program(**kwargs)
             
