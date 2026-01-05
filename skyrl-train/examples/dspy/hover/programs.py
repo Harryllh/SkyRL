@@ -1,6 +1,9 @@
+from re import S
 import dspy
 from typing import List
-
+from dspy.adapters import XMLAdapter
+from dspy.dsp.utils import deduplicate
+from utils import search_raw
 
 class GenerateThreeQueries(dspy.Signature):
     """
@@ -56,6 +59,7 @@ class Hover(dspy.Module):
         self.rm = dspy.ColBERTv2()
         self.generate_query = dspy.ChainOfThought(GenerateThreeQueries)
         self.append_notes = dspy.ChainOfThought(AppendNotes)
+        self.adapter = XMLAdapter()
 
     def forward(self, claim: str) -> List[str]:
         key_facts = []
@@ -115,3 +119,36 @@ class Hover(dspy.Module):
                 key_facts.append(pred.new_key_facts)
 
         return dspy.Prediction(key_facts=key_facts, retrieved_docs=committed_docs)
+    
+class Hove_fact_retrieval(Hover):
+    async def forward(self, example):
+        claim = example.get("claim")
+        return super().forward(claim)
+    
+    def collect_trace(self, kwargs, pred):
+        original_sig = GenerateThreeQueries
+        # Get formatted finetune data which contains both input and output messages
+        finetune_data = self.adapter.format_finetune_data(
+                                signature=original_sig,
+                                inputs=kwargs,
+                                outputs=pred.to_dict(),
+                                demos=[] # TODO: Add support for demos
+                            )
+        
+        all_messages = finetune_data.get('messages', [])
+        
+        # Extract user and assistant messages
+        chat_history = [None, None, None]
+        
+        for msg in all_messages:
+            if msg.get("role") == "user":
+                chat_history[0] = {
+                    "role": "user",
+                    "content": msg['content']
+                }
+            elif msg.get("role") == "assistant":
+                chat_history[1] = {
+                    "role": "assistant",
+                    "content": msg['content']
+                }
+        return finetune_data
