@@ -1,57 +1,18 @@
 from typing import List, Dict, Any
 import dspy
-import json
+import os
+import pickle
 
 def _prepare_passages(path: str) -> list[str]:
-    """
-    Loads and parses a JSONL file located at `path`, returning a list of text passages.
-    Each line is a JSON object with keys:
-      - 'pid' (int)
-      - 'title' (str)
-      - 'text' (list[str])  # list of sentences
-    """
-    passages = []
+    if not os.path.exists(path):
+        return None
+    else:
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
-    with open(path, "r", encoding="utf-8") as fp:
-        for line in fp:
-            line = line.strip()
-            if not line:
-                continue
-
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if "long_text" in obj and isinstance(obj["long_text"], str):
-                passage = obj["long_text"].strip()
-                if passage:
-                    passages.append(passage)
-                continue
-
-            text = obj.get("text")
-            if not isinstance(text, list) or not text:
-                continue
-
-            body = " ".join(s.strip() for s in text if s and s.strip())
-            if not body:
-                continue
-
-            title = obj.get("title", "").strip()
-            if title:
-                passage = f"{title}\n{body}"
-            else:
-                passage = body
-
-            passages.append(passage)
-
-    return passages
-
-    
 class HoverRetrieverLocal(dspy.RetrieverLocal):
-    def __init__(self, path: str):
-        self.path = path
-        self.passages = _prepare_passages(path)
+    def __init__(self, corpus_path: str):
+        self.passages = _prepare_passages(corpus_path)
 
         self.config = dspy.ColBERTConfig(
             checkpoint="colbert-ir/colbertv2.0",
@@ -74,4 +35,12 @@ class HoverRetrieverLocal(dspy.RetrieverLocal):
 
         return topK_passages
 
+def hover_query_reward_fn(example, pred):
+    gold_titles = example.titles
+    retrieved_titles = [doc.split(" | ")[0] for doc in pred.retrieved_docs]
+    return sum(x in retrieved_titles for x in set(gold_titles)) / len(gold_titles)
+
+def hover_final_reward_fn(example, pred):
+    #TODO
+    return 0.0
     
