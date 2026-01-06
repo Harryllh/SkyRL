@@ -13,6 +13,13 @@ from pathlib import Path
 from .trial import TrialConfig, Trial, AgentResult
 from .utils import get_program, get_reward_function
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 # We have N retries for each trial, if one of the rollout (out of n_samples_per_prompt) fails
 # after N attemptes, we skip this prompt altogether.
 MAX_NUM_RETRIES_PER_TRIAL = 2
