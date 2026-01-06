@@ -41,6 +41,17 @@ def hover_query_reward_fn(example, pred):
     return sum(x in retrieved_titles for x in set(gold_titles)) / len(gold_titles)
 
 def hover_final_reward_fn(example, pred):
-    #TODO
-    return 0.0
+    gold_titles = set(
+        map(
+            dspy.evaluate.normalize_text,
+            [doc["key"] for doc in example["supporting_facts"]],
+        )
+    )
+    found_titles = set(
+        map(
+            dspy.evaluate.normalize_text,
+            pred.titles
+        )
+    )
+    return gold_titles.issubset(found_titles)
     
