@@ -11,7 +11,7 @@ NUM_NODES=1
 NUM_GPUS=1
 LOGGER="wandb"
 
-MODEL_NAME="Qwen/Qwen2.5-1.5B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-0.5B-Instruct"
 
 
 FLASH_ATTN=true
@@ -31,7 +31,7 @@ uv run --isolated --extra dspy --extra vllm -m examples.dspy.entrypoints.main_ds
   data.train_data=$train_data \
   data.val_data=$train_data \
   +dspy.max_num_examples=400 \
-  +dspy.program="hover" \
+  +dspy.program="Hover_query_gen" \
   +dspy.benchmark_name="hover" \
   +dspy.local_reward_fn="hover_query_reward_fn" \
   +dspy.final_reward_fn="hover_final_reward_fn" \

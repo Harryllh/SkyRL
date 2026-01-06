@@ -17,7 +17,7 @@ from .lcb.lcb_utils import (
     CodeGeneratorWithIteratedRanker,
     CodeGeneratorWithSelfDebug,
 )
-from .hover.programs import Hover
+from .hover.programs import Hover, Hover_query_gen
 from .papillon.programs import PAPILLON, PAPILLON_request_gen
 
 # Import reward functions from different modules
@@ -47,7 +47,7 @@ DSPY_PROGRAM_MAP: Dict[str, Type[dspy.Module]] = {
     "CodeGeneratorWithRanker_test": CodeGeneratorWithRanker_test,
     "CodeGeneratorWithIteratedRanker": CodeGeneratorWithIteratedRanker,
     "CodeGeneratorWithSelfDebug": CodeGeneratorWithSelfDebug,
-    "Hover": Hover,
+    "Hover_query_gen": Hover_query_gen,
     "papillon_request_gen": PAPILLON_request_gen,
 }
 

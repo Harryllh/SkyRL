@@ -11,8 +11,6 @@ from skyrl_train.inference_engines.base import ConversationType
 from omegaconf import DictConfig
 from pathlib import Path
 from .trial import TrialConfig, Trial, AgentResult
-from .lcb.utils import final_reward_fn, local_reward_fn
-from .lcb.programs import NaiveCodeGenerator, CodeGeneratorWithRanker_test
 from .utils import get_program, get_reward_function
 
 # We have N retries for each trial, if one of the rollout (out of n_samples_per_prompt) fails

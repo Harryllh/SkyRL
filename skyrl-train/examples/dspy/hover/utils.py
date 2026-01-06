@@ -2,56 +2,70 @@ from typing import List, Dict, Any
 import dspy
 import os
 import pickle
+import bm25s
+import Stemmer
 
-def _prepare_passages(path: str) -> list[str]:
-    if not os.path.exists(path):
-        return None
-    else:
-        with open(path, "rb") as f:
-            return pickle.load(f)
+def _get_hover_data_dir() -> str:
+    """Return the directory where all hover-related data should be stored."""
+    hover_dir = os.path.join(os.path.expanduser("~"), "data", "hover")
+    os.makedirs(hover_dir, exist_ok=True)
+    return hover_dir
 
-class HoverRetrieverLocal(dspy.RetrieverLocal):
-    def __init__(self, corpus_path: str):
-        self.passages = _prepare_passages(corpus_path)
+class BM25Searcher:
+    _shared_retriever = None
+    _shared_corpus = None
 
-        self.config = dspy.ColBERTConfig(
-            checkpoint="colbert-ir/colbertv2.0",
-            index_name="wiki17_abstracts_hover",
-            experiment="hover",
-            nranks=1,
+    def __init__(self):
+        if BM25Searcher._shared_retriever is None:
+            pkl_path = os.path.join(_get_hover_data_dir(), "bm25_retriever.pkl")
+            with open(pkl_path, "rb") as fh:
+                data = pickle.load(fh)
+
+            BM25Searcher._shared_retriever = data["retriever"]
+            BM25Searcher._shared_corpus = data["corpus"]
+
+        self.retriever = BM25Searcher._shared_retriever
+        self.corpus = BM25Searcher._shared_corpus
+        self.stemmer = Stemmer.Stemmer("english")
+
+    def search(self, query: str, k: int) -> List[str]:
+        tokens = bm25s.tokenize(
+            query,
+            stopwords="en",
+            stemmer=self.stemmer,
+            show_progress=False,
         )
 
-        self.rm = dspy.ColBERTv2RetrieverLocal(
-            passages=self.passages,
-            colbert_config=self.config,
-            load_only=False,
+        results, scores = self.retriever.retrieve(
+            tokens, k=k, n_threads=1, show_progress=False
         )
 
-    def retrieve(self, query: str, k: int) -> list[str]:
-        topK_passages = self.rm(query, k)
+        return [
+            self.corpus[doc]
+            for doc, score in zip(results[0], scores[0])
+        ]
 
-        assert isinstance(topK_passages, list)
-        assert len(topK_passages) <= k
 
-        return topK_passages
+async def hover_query_reward_fn(example, pred):
+    return 0
 
-def hover_query_reward_fn(example, pred):
+async def hover_final_reward_fn(example, pred, trace=None):
     gold_titles = example.titles
     retrieved_titles = [doc.split(" | ")[0] for doc in pred.retrieved_docs]
     return sum(x in retrieved_titles for x in set(gold_titles)) / len(gold_titles)
 
-def hover_final_reward_fn(example, pred):
-    gold_titles = set(
-        map(
-            dspy.evaluate.normalize_text,
-            [doc["key"] for doc in example["supporting_facts"]],
-        )
-    )
-    found_titles = set(
-        map(
-            dspy.evaluate.normalize_text,
-            pred.titles
-        )
-    )
-    return gold_titles.issubset(found_titles)
+# async def hover_final_reward_fn(example, pred):
+#     gold_titles = set(
+#         map(
+#             dspy.evaluate.normalize_text,
+#             [doc["key"] for doc in example["supporting_facts"]],
+#         )
+#     )
+#     found_titles = set(
+#         map(
+#             dspy.evaluate.normalize_text,
+#             pred.titles
+#         )
+#     )
+#     return gold_titles.issubset(found_titles)
     

@@ -34,7 +34,7 @@ dependencies = [
     "debugpy==1.8.0",
     "hf_transfer",
     "wandb",
-    "datasets==4.0.0",
+    "datasets<4.0.0",
     "tensordict",
     "jaxtyping",
     "skyrl-gym",
@@ -45,7 +45,6 @@ dependencies = [
     "uvicorn",
     "pybind11",
     "setuptools",
-    "dspy>=3.1.0b1",
 ]
 
 [tool.uv]
@@ -118,6 +117,9 @@ dev = [
 ]
 dspy = [
     "dspy @ git+https://github.com/stanfordnlp/dspy.git",
+    "ujson",
+    "PyStemmer",
+    "bm25s",
 ]
 docs = [
     "sphinx>=7.0.0",
