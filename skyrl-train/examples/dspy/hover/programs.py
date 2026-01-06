@@ -3,7 +3,7 @@ import dspy
 from typing import List
 from dspy.adapters import XMLAdapter
 from dspy.dsp.utils import deduplicate
-from utils import search_raw
+from utils import HoverRetrieverLocal
 
 class GenerateThreeQueries(dspy.Signature):
     """
@@ -56,10 +56,13 @@ class Hover(dspy.Module):
         self.k_per_search_query_last_hop = k_per_search_query_last_hop
         self.num_total_passages = num_total_passages
 
-        self.rm = dspy.ColBERTv2()
+        self.rm = HoverRetrieverLocal(path='./skyrl-train/examples/dspy/hover/wiki.abstracts.2017.jsonl')
+        
         self.generate_query = dspy.ChainOfThought(GenerateThreeQueries)
         self.append_notes = dspy.ChainOfThought(AppendNotes)
         self.adapter = XMLAdapter()
+        
+        dspy.configure(rm=self.rm)
 
     def forward(self, claim: str) -> List[str]:
         key_facts = []
@@ -95,7 +98,7 @@ class Hover(dspy.Module):
             search_results = [
                 r
                 for q in search_queries
-                for r in search_raw(q, k=hop_k, rm=self.rm)
+                for r in self.rm.retrieve(query=q, k=hop_k)
             ]
 
             search_results = sorted(
