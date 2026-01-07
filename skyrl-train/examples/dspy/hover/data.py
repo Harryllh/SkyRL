@@ -85,4 +85,4 @@ def hover_data():
     prepare_corpus("wiki.abstracts.2017.jsonl")
     print("Corpus prepared.")
 
-    return trainset, testset
+    return trainset + devset, testset

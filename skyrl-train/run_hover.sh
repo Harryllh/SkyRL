@@ -49,8 +49,8 @@ uv run --isolated --extra dspy --extra vllm -m examples.dspy.entrypoints.main_ds
   generator.http_endpoint_host="127.0.0.1" \
   generator.http_endpoint_port=8000 \
   trainer.epochs=20 \
-  trainer.policy_mini_batch_size=32 \
-  trainer.train_batch_size=32 \
+  trainer.policy_mini_batch_size=64 \
+  trainer.train_batch_size=64 \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=29000 \
@@ -59,8 +59,8 @@ uv run --isolated --extra dspy --extra vllm -m examples.dspy.entrypoints.main_ds
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.kl_loss_coef=0.001 \
-  trainer.hf_save_interval=2 \
-  trainer.ckpt_interval=2 \
+  trainer.hf_save_interval=10 \
+  trainer.ckpt_interval=10 \
   trainer.flash_attn=$FLASH_ATTN \
   generator.backend=vllm \
   generator.run_engines_locally=true \
