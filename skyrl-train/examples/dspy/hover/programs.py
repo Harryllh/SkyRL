@@ -53,7 +53,8 @@ Given a claim, some key facts, and new search results, identify any new learning
 class Hover(dspy.Module):
     def __init__(self, num_docs=4, num_hops=2):
         self.num_docs, self.num_hops = num_docs, num_hops
-        self.generate_query = dspy.ChainOfThought(dspy.Signature("claim, key_facts -> followup_search_query", instr1))
+        self.generate_query_sig = dspy.Signature("claim, key_facts -> followup_search_query", instr1)
+        self.generate_query = dspy.ChainOfThought(self.generate_query_sig)
         self.append_notes = dspy.ChainOfThought(dspy.Signature("claim, key_facts, new_search_results -> new_key_facts", instr2))
         self.bm25_retriever = BM25Searcher()
         self.adapter = XMLAdapter()
@@ -110,7 +111,7 @@ class Hover_query_gen(Hover):
         original_sig = GenerateThreeQueries
         # Get formatted finetune data which contains both input and output messages
         finetune_data = self.adapter.format_finetune_data(
-                                signature=original_sig,
+                                signature=self.generate_query_sig,
                                 inputs=example,
                                 outputs=pred,
                                 demos=[] # TODO: Add support for demos
