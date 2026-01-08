@@ -7,9 +7,10 @@ import Stemmer
 
 def _get_hover_data_dir() -> str:
     """Return the directory where all hover-related data should be stored."""
-    hover_dir = os.path.join(os.path.expanduser("~"), "data", "hover")
-    os.makedirs(hover_dir, exist_ok=True)
-    return hover_dir
+    # hover_dir = os.path.join(os.path.expanduser("~"), "data", "hover")
+    # os.makedirs(hover_dir, exist_ok=True)
+    # return hover_dir
+    return "/work/jiashu/assertion-data"
 
 class BM25Searcher:
     _shared_retriever = None
