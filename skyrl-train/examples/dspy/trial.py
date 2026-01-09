@@ -123,10 +123,14 @@ class Trial:
                 print(f"[Trial] local_reward_fn finished for task_id: {self.example.get('task_id')}. Got {local_reward}")
             except asyncio.TimeoutError as e:
                 raise VerifierTimeoutError(f"TimeoutError: local_reward_fn exceeded {verification_timeout_seconds} seconds")
+            
+            # For handling the case where there is only one module in the program.
+            reward = final_reward + local_reward if self.local_reward_fn != self.final_reward_fn else final_reward
             results.reward = AgentResult(
-                    output=final_reward + local_reward,
-                    metadata={"reward_value": final_reward + local_reward}
-                )
+                output=reward,
+                metadata={"reward_value": reward}
+            )
+            
             if trace:
                 results.traces = trace if isinstance(trace, list) else [trace]
             

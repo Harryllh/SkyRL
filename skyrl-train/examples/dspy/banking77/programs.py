@@ -6,15 +6,6 @@ from dspy.dsp.utils import deduplicate
 from dspy.adapters.xml_adapter import XMLAdapter
 from .data import CLASSES
 
-instr1 = """
-Given a claim and some key facts, generate a follow-up search query to find the next most essential clue towards verifying or refuting the claim. The goal ultimately is to find all documents implicated by the claim.
-""".strip()
-
-instr2 = """
-Given a claim, some key facts, and new search results, identify any new learnings from the new search results, which will extend the key facts known so far about the whether the claim is true or false. The goal is to ultimately collect all facts that would help us find all documents implicated by the claim.
-""".strip()
-
-
 class Banking77(dspy.Module):
     def __init__(self):
         self.intent_classifier = dspy.ChainOfThought(f"text -> label: Literal{CLASSES}")
