@@ -4,14 +4,14 @@ set -x
 # export WANDB_API_KEY=<your_key_here>
 # bash examples/livecodebench/run_lcb.sh
 
-export WANDB_API_KEY="6a25ce5b41815c557d6fe8aecb8bac2dd6b1bea0"
+# export WANDB_API_KEY="6a25ce5b41815c557d6fe8aecb8bac2dd6b1bea0"
 
 
 NUM_NODES=1
 NUM_GPUS=1
 LOGGER="wandb"
 
-MODEL_NAME="Qwen/Qwen2.5-0.5B"
+MODEL_NAME="Qwen/Qwen2.5-1.5B"
 
 
 FLASH_ATTN=true
@@ -33,7 +33,7 @@ uv run --isolated --extra dspy --extra vllm -m examples.dspy.entrypoints.main_ds
   +dspy.max_num_examples=400 \
   +dspy.program="Banking77_intent_classifier" \
   +dspy.benchmark_name="banking77" \
-  +dspy.local_reward_fn="banking77_final_reward_fn" \
+  +dspy.local_reward_fn="banking77_local_reward_fn" \
   +dspy.final_reward_fn="banking77_final_reward_fn" \
   trainer.policy.model.path=$MODEL_NAME \
   trainer.placement.colocate_all=true \

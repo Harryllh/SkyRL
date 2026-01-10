@@ -1,2 +1,8 @@
-def banking77_final_reward_fn(example, pred):
-    return 1 if pred == example.get("label") else 0
+async def banking77_final_reward_fn(example, pred, trace=None):
+    return 1 if pred.get("label") == example.get("label") else 0
+
+async def banking77_local_reward_fn(example, pred):
+    assert len(pred) == 1, "Pred should have only one element"
+    
+    # No local reward for this task
+    return 0

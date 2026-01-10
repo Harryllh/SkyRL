@@ -34,9 +34,9 @@ from .hover.utils import (
     hover_final_reward_fn,
     hover_query_reward_fn,
 )
-
 from .banking77.utils import (
     banking77_final_reward_fn,
+    banking77_local_reward_fn,
 )
 
 # Import data functions from different modules
@@ -67,6 +67,7 @@ REWARD_FUNCTION_MAP: Dict[str, Callable[..., Any]] = {
     "hover_final_reward_fn": hover_final_reward_fn,
     "hover_query_reward_fn": hover_query_reward_fn,
     "banking77_final_reward_fn": banking77_final_reward_fn,
+    "banking77_local_reward_fn": banking77_local_reward_fn,
 }
 
 # Mapping from benchmark name (string) to data function
