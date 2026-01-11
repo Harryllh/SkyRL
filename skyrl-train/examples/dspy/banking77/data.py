@@ -11,11 +11,11 @@ def banking77_data():
 
     trainset = [
         dspy.Example(x, hint=CLASSES[x.label], label=CLASSES[x.label], task_id=uuid.uuid4()).with_inputs("text", "hint")
-        for x in DataLoader().from_huggingface(dataset_name="PolyAI/banking77", **kwargs)[:2000]    
+        for x in DataLoader().from_huggingface(dataset_name="PolyAI/banking77", **kwargs)[:1000]    
     ]
     validationset = [
         dspy.Example(x, hint=CLASSES[x.label], label=CLASSES[x.label], task_id=uuid.uuid4()).with_inputs("text", "hint")
-        for x in DataLoader().from_huggingface(dataset_name="PolyAI/banking77", **kwargs)[2000: 4000]
+        for x in DataLoader().from_huggingface(dataset_name="PolyAI/banking77", **kwargs)[1000: 1200]
     ]
     
     random.Random(0).shuffle(trainset)
