@@ -60,7 +60,7 @@ uv run --isolated --extra dspy --extra vllm -m examples.dspy.entrypoints.main_ds
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.kl_loss_coef=0.001 \
   trainer.hf_save_interval=10 \
-  trainer.ckpt_interval=2 \
+  trainer.ckpt_interval=10 \
   trainer.flash_attn=$FLASH_ATTN \
   generator.backend=vllm \
   generator.run_engines_locally=true \

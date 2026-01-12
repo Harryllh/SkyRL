@@ -1,20 +1,22 @@
 from .data import CLASSES
-# async def banking77_final_reward_fn(example, pred, trace=None):
-#     return 1 if pred.get("label") == example.get("label") else 0
-
+# Final task reward (correctness)
 async def banking77_final_reward_fn(example, pred, trace=None):
-    pred_label = pred.get("label")
-    ref_label = example.get("label")
-    
-    if pred_label not in CLASSES:
-        return 0
-    if ref_label != pred_label:
-        return 0.5
-    else:
-        return 1
-    
+    label = pred.get("label")
+    gold = example.get("label")
+
+    if label is None:
+        return 0.0
+
+    return 1.0 if label == gold else 0.0
+
+
+# Local validity / constraint reward
 async def banking77_local_reward_fn(example, pred):
     assert len(pred) == 1, "Pred should have only one element"
-    
-    # No local reward for this task
-    return 0
+    label = pred[0].get("label")
+    gold = example.get("label")
+
+    if label is None:
+        return 0.0 if label == gold else 0.0
+
+    return 0.5 if label in CLASSES else 0.0
