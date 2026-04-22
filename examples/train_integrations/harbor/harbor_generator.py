@@ -28,6 +28,8 @@ logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 MAX_NUM_RETRIES_PER_TRIAL = 2
 
 
+FORMAT_REWARD_WEIGHT = 0.1
+
 @dataclass
 class HarborAgentOutput:
     response_ids: List[int]
@@ -38,6 +40,7 @@ class HarborAgentOutput:
     trajectory_id: TrajectoryID
     summarization_count: Optional[int] = None
     num_turns: Optional[int] = None
+    format_reward: Optional[float] = None
 
 
 class HarborGenerator(GeneratorInterface):
@@ -198,6 +201,11 @@ class HarborGenerator(GeneratorInterface):
             rollout_metrics["generate/avg_num_turns"] = sum(output.num_turns for output in successful_outputs) / len(
                 successful_outputs
             )
+            outputs_with_format = [o for o in successful_outputs if o.format_reward is not None]
+            if outputs_with_format:
+                rollout_metrics["generate/avg_format_reward"] = sum(
+                    o.format_reward for o in outputs_with_format
+                ) / len(outputs_with_format)
         else:
             rollout_metrics = {}
 
@@ -227,6 +235,7 @@ class HarborGenerator(GeneratorInterface):
         chat_history = None
         summarization_count = None
         num_turns = None
+        format_reward = None
         successful = False
         is_context_length_error = False
         is_agent_timeout_error = False
@@ -265,7 +274,17 @@ class HarborGenerator(GeneratorInterface):
                     logger.warning(f"{prefix} failed: Exception info: {results.exception_info}. Results: {results}")
                     continue
                 else:
-                    reward = results.verifier_result.rewards["reward"]
+                    verifier_reward = results.verifier_result.rewards["reward"]
+                    format_reward = (
+                        results.agent_result.metadata.get("format_reward")
+                        if results.agent_result and results.agent_result.metadata
+                        else None
+                    )
+                    reward = verifier_reward + FORMAT_REWARD_WEIGHT * (format_reward or 0.0)
+                    logger.debug(
+                        f"{prefix} reward={reward:.4f} "
+                        f"(verifier={verifier_reward:.4f}, format={format_reward})"
+                    )
 
                 # --- Extract chat history and check for success ---
                 chat_history = results.agent_result.metadata["all_messages"]
@@ -346,4 +365,5 @@ class HarborGenerator(GeneratorInterface):
             trajectory_id=trajectory_id,
             summarization_count=summarization_count,
             num_turns=num_turns,
+            format_reward=format_reward,
         )
