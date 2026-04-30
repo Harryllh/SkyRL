@@ -13,6 +13,11 @@ register(
 )
 
 register(
+    id="safety",
+    entry_point="skyrl_gym.envs.safety.env:SafetyEnv",
+)
+
+register(
     id="gsm8k_multi_turn",
     entry_point="skyrl_gym.envs.gsm8k.multi_turn_env:GSM8kMultiTurnEnv",
 )
