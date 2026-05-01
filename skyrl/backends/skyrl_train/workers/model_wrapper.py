@@ -150,16 +150,14 @@ class HFModelWrapper(nn.Module):
                     device_map=device_map,
                 )
 
-            # Detect which kwarg name this VLM's forward uses for token type IDs.
-            # Gemma3 uses `token_type_ids`; transformers v5+ VLMs use `mm_token_type_ids`.
-            if self.is_vlm:
-                fwd_params = inspect.signature(self.model.forward).parameters
-                if "token_type_ids" in fwd_params:
-                    self._token_type_ids_kwarg = "token_type_ids"
-                elif "mm_token_type_ids" in fwd_params:
-                    self._token_type_ids_kwarg = "mm_token_type_ids"
-                else:
-                    self._token_type_ids_kwarg = None
+            # Detect which kwarg name this model's forward uses for token type IDs.
+            # Gemma3 requires `token_type_ids` during training even for text-only
+            # language-model-only runs; transformers v5+ VLMs may use `mm_token_type_ids`.
+            fwd_params = inspect.signature(self.model.forward).parameters
+            if "token_type_ids" in fwd_params:
+                self._token_type_ids_kwarg = "token_type_ids"
+            elif "mm_token_type_ids" in fwd_params:
+                self._token_type_ids_kwarg = "mm_token_type_ids"
             else:
                 self._token_type_ids_kwarg = None
 
@@ -378,6 +376,15 @@ class HFModelWrapper(nn.Module):
                 sequences_rolled, None, None, self.sequence_parallel_size
             )
 
+        token_type_kwargs = {}
+        if mm_token_type_ids is None and self._token_type_ids_kwarg is not None:
+            if self.is_vlm and image_grid_thw is not None and hasattr(self.model.config, "image_token_id"):
+                mm_token_type_ids = (sequences_fwd == self.model.config.image_token_id).long()
+            else:
+                mm_token_type_ids = torch.zeros_like(sequences_fwd)
+        if mm_token_type_ids is not None and self._token_type_ids_kwarg is not None:
+            token_type_kwargs[self._token_type_ids_kwarg] = mm_token_type_ids
+
         if self.is_vlm:
             # NOTE: transformers v5 introduced `mm_token_type_ids` to distinguish text
             # vs. multimodal tokens, and expects it to be populated at tokenization.
@@ -385,18 +392,11 @@ class HFModelWrapper(nn.Module):
             # returned. For now we populate it here for images (0 = text, 1 = image token).
             # Some models (e.g. Gemma3) always require token_type_ids during training, even
             # for text-only inputs, so we always populate it when the model supports it.
-            if mm_token_type_ids is None and self._token_type_ids_kwarg is not None:
-                if image_grid_thw is not None:
-                    mm_token_type_ids = (sequences_fwd == self.model.config.image_token_id).long()
-                else:
-                    mm_token_type_ids = torch.zeros_like(sequences_fwd)
-
             vlm_kwargs = dict(
                 pixel_values=pixel_values,
                 image_grid_thw=image_grid_thw,
             )
-            if mm_token_type_ids is not None and self._token_type_ids_kwarg is not None:
-                vlm_kwargs[self._token_type_ids_kwarg] = mm_token_type_ids
+            vlm_kwargs.update(token_type_kwargs)
             output = self.model(
                 sequences_fwd,
                 attention_mask=attention_mask_fwd,
@@ -407,9 +407,14 @@ class HFModelWrapper(nn.Module):
         elif self.use_sample_packing and self.attn_implementation == "flash_attention_2":
             # NOTE (sumanthrh): Don't use attention mask. position_ids is enough.
             # Not using attention mask leads to higher perf since flash attention varlen func is enabled
-            output = self.model(sequences_fwd, attention_mask=None, position_ids=position_ids_fwd)
+            output = self.model(sequences_fwd, attention_mask=None, position_ids=position_ids_fwd, **token_type_kwargs)
         else:
-            output = self.model(sequences_fwd, attention_mask=attention_mask_fwd, position_ids=position_ids_fwd)
+            output = self.model(
+                sequences_fwd,
+                attention_mask=attention_mask_fwd,
+                position_ids=position_ids_fwd,
+                **token_type_kwargs,
+            )
 
         logits_BSV = output["logits"]
         logits_BSV.div_(temperature)

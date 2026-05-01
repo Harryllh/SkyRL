@@ -1,10 +1,11 @@
 """
 Preprocess a prompt-pairs JSONL to parquet format for safety classification
-GRPO training.
+GRPO training. Uses walledai/XSTest from HuggingFace as the validation set.
 Follows the same structure as examples/train/gsm8k/gsm8k_dataset.py.
 
 Usage:
-    uv run examples/train/safety/safety_dataset.py \
+    uv run --no-project --python 3.12 --with datasets \
+        examples/train/safety/safety_dataset.py \
         --data_path ~/aq_worktrial/sdg_output/prompt_pairs.jsonl \
         --output_dir ~/data/safety
 """
@@ -13,7 +14,7 @@ import argparse
 import json
 import os
 import random
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 
 
 def normalize_categories(categories) -> list[str]:
@@ -80,41 +81,53 @@ def load_from_jsonl(path: str) -> list[dict]:
     return examples
 
 
+def load_from_hf() -> list[dict]:
+    raw = load_dataset("walledai/XSTest")
+    split_name = "test" if "test" in raw else list(raw.keys())[0]
+    dataset = raw[split_name]
+
+    label_col = next(
+        (c for c in ("label", "type", "safety_label") if c in dataset.column_names),
+        None,
+    )
+    if label_col is None:
+        raise ValueError(f"Cannot find label column in XSTest. Columns: {dataset.column_names}")
+    return [{"prompt": row["prompt"], "label": dataset[label_col][i].lower(), "categories": None}
+            for i, row in enumerate(dataset)]
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_path",
         required=True,
-        help="Path to local prompt_pairs.jsonl.",
+        help="Path to local prompt_pairs.jsonl (used as training set).",
     )
     parser.add_argument("--output_dir", default="~/data/safety")
-    parser.add_argument(
-        "--val_size",
-        type=int,
-        default=50,
-        help="Number of examples to hold out for validation.",
-    )
-    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     args.output_dir = os.path.expanduser(args.output_dir)
     os.makedirs(args.output_dir, exist_ok=True)
 
     data_source = os.path.basename(args.data_path)
-    examples = load_from_jsonl(os.path.expanduser(args.data_path))
+    all_rows = load_from_jsonl(os.path.expanduser(args.data_path))
 
-    random.seed(args.seed)
-    random.shuffle(examples)
+    safe_rows = [r for r in all_rows if r["label"] == "safe"]
+    unsafe_rows = [r for r in all_rows if r["label"] == "unsafe"]
+    # 80% safe, 20% unsafe → keep all safe, take safe_count // 4 unsafe
+    unsafe_rows = unsafe_rows[: len(safe_rows) // 4]
+    train_rows = safe_rows + unsafe_rows
+    random.seed(42)
+    random.shuffle(train_rows)
+    train_rows = train_rows[:5120]
 
-    val_size = min(args.val_size, len(examples) // 5)
-    train_rows = examples[val_size:]
-    val_rows = examples[:val_size]
+    val_rows = load_from_hf()
 
     train_dataset = Dataset.from_list([
         make_example(r["prompt"], r["label"], "train", i, data_source, r.get("categories"))
         for i, r in enumerate(train_rows)
     ])
     val_dataset = Dataset.from_list([
-        make_example(r["prompt"], r["label"], "val", i, data_source, r.get("categories"))
+        make_example(r["prompt"], r["label"], "val", i, "walledai/XSTest")
         for i, r in enumerate(val_rows)
     ])
 
