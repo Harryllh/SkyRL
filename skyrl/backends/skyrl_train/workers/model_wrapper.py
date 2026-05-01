@@ -4,6 +4,7 @@
 # https://github.com/OpenRLHF/OpenRLHF/blob/main/openrlhf/models/model.py
 
 from typing import Any, Dict, Optional, Tuple, Union
+import inspect
 
 import numpy as np
 import torch
@@ -148,6 +149,19 @@ class HFModelWrapper(nn.Module):
                     torch_dtype=torch.bfloat16 if bf16 else torch.float32,
                     device_map=device_map,
                 )
+
+            # Detect which kwarg name this VLM's forward uses for token type IDs.
+            # Gemma3 uses `token_type_ids`; transformers v5+ VLMs use `mm_token_type_ids`.
+            if self.is_vlm:
+                fwd_params = inspect.signature(self.model.forward).parameters
+                if "token_type_ids" in fwd_params:
+                    self._token_type_ids_kwarg = "token_type_ids"
+                elif "mm_token_type_ids" in fwd_params:
+                    self._token_type_ids_kwarg = "mm_token_type_ids"
+                else:
+                    self._token_type_ids_kwarg = None
+            else:
+                self._token_type_ids_kwarg = None
 
             # gpt oss
             if Version(transformers.__version__) >= Version("4.56.2"):
@@ -369,15 +383,20 @@ class HFModelWrapper(nn.Module):
             # vs. multimodal tokens, and expects it to be populated at tokenization.
             # However, vLLM doesn't support transformers v5 yet so no mm_token_type_ids are
             # returned. For now we populate it here for images (0 = text, 1 = image token).
-            if image_grid_thw is not None and mm_token_type_ids is None:
-                mm_token_type_ids = (sequences_fwd == self.model.config.image_token_id).long()
+            # Some models (e.g. Gemma3) always require token_type_ids during training, even
+            # for text-only inputs, so we always populate it when the model supports it.
+            if mm_token_type_ids is None and self._token_type_ids_kwarg is not None:
+                if image_grid_thw is not None:
+                    mm_token_type_ids = (sequences_fwd == self.model.config.image_token_id).long()
+                else:
+                    mm_token_type_ids = torch.zeros_like(sequences_fwd)
 
             vlm_kwargs = dict(
                 pixel_values=pixel_values,
                 image_grid_thw=image_grid_thw,
             )
-            if mm_token_type_ids is not None:
-                vlm_kwargs["mm_token_type_ids"] = mm_token_type_ids
+            if mm_token_type_ids is not None and self._token_type_ids_kwarg is not None:
+                vlm_kwargs[self._token_type_ids_kwarg] = mm_token_type_ids
             output = self.model(
                 sequences_fwd,
                 attention_mask=attention_mask_fwd,

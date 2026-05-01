@@ -7,6 +7,7 @@ For details, see https://docs.skyrl.ai/docs/tutorials/skyrl_gym_generator
 
 import asyncio
 import copy
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -287,6 +288,12 @@ class SkyRLGymGenerator(GeneratorInterface):
             return_dict=False,
             **self.generator_cfg.chat_template_kwargs,
         )
+        if os.environ.get("SKYRL_DEBUG_MODEL_INPUTS") == "1":
+            logger.info(
+                "Rendered model input for trajectory {}:\n{}",
+                session_id,
+                self.tokenizer.decode(initial_input_ids, skip_special_tokens=False),
+            )
 
         initial_prompt_length = len(initial_input_ids)
         loss_mask = []  # this excludes the prompt

@@ -789,6 +789,7 @@ class RayPPOTrainer:
             generator_output_for_metrics,
             uids_for_metrics,
         )
+        group_reward_metrics = self.get_group_reward_metrics(generator_output_for_metrics["rewards"], uids_for_metrics)
 
         # Prefix-aware merging of step-wise turns.
         if self.cfg.generator.merge_stepwise_output:
@@ -833,14 +834,59 @@ class RayPPOTrainer:
             f"reward/avg_pass_at_{n_samples_per_prompt}": overall_metrics["pass_at_n"],
             "reward/avg_raw_reward": overall_metrics["avg_score"],
             "reward/mean_positive_reward": overall_metrics["mean_positive_reward"],
+            **group_reward_metrics,
         }
         self.all_metrics.update(reward_metrics)
         logger.info(
             f"reward/avg_pass_at_{n_samples_per_prompt}: {overall_metrics['pass_at_n']}, reward/avg_raw_reward: {overall_metrics['avg_score']}, reward/mean_positive_reward: {overall_metrics['mean_positive_reward']}"
         )
+        logger.info(
+            "reward group stats: "
+            f"all_zero={group_reward_metrics['reward/group_all_zero']}, "
+            f"all_one={group_reward_metrics['reward/group_all_one']}, "
+            f"all_positive={group_reward_metrics['reward/group_all_positive']}, "
+            f"mixed={group_reward_metrics['reward/group_mixed']}, "
+            f"zero_variance={group_reward_metrics['reward/group_zero_variance']}"
+        )
         # re-assign reward but now it's per token rewards
         generator_output["rewards"] = per_token_rewards
         return generator_output, uids
+
+    @staticmethod
+    def get_group_reward_metrics(
+        rewards: Union[List[float], List[List[float]]],
+        uids: List[str],
+    ) -> Dict[str, float]:
+        """Summarize trajectory rewards by prompt UID."""
+        uid_to_rewards = defaultdict(list)
+        for uid, reward in zip(uids, rewards):
+            reward_value = float(sum(reward)) if isinstance(reward, list) else float(reward)
+            uid_to_rewards[uid].append(reward_value)
+
+        if not uid_to_rewards:
+            return {}
+
+        groups = list(uid_to_rewards.values())
+        total_groups = len(groups)
+        all_zero = sum(1 for vals in groups if all(v == 0.0 for v in vals))
+        all_one = sum(1 for vals in groups if all(v == 1.0 for v in vals))
+        all_positive = sum(1 for vals in groups if all(v > 0.0 for v in vals))
+        zero_variance = sum(1 for vals in groups if np.std(vals) == 0.0)
+        mixed = total_groups - zero_variance
+
+        return {
+            "reward/group_count": float(total_groups),
+            "reward/group_all_zero": float(all_zero),
+            "reward/group_all_zero_frac": all_zero / total_groups,
+            "reward/group_all_one": float(all_one),
+            "reward/group_all_one_frac": all_one / total_groups,
+            "reward/group_all_positive": float(all_positive),
+            "reward/group_all_positive_frac": all_positive / total_groups,
+            "reward/group_mixed": float(mixed),
+            "reward/group_mixed_frac": mixed / total_groups,
+            "reward/group_zero_variance": float(zero_variance),
+            "reward/group_zero_variance_frac": zero_variance / total_groups,
+        }
 
     @torch.no_grad()
     def compute_advantages_and_returns(self, data: TrainingInputBatch) -> TrainingInputBatch:
